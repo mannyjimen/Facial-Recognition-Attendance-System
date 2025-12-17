@@ -34,25 +34,15 @@ def save_models(mean_image: np.ndarray, pca: PCA, knn: KNeighborsClassifier):
     print("saved all models to model_files directory")
 
 #trains the model using PCA and knn (input is number of dimensions for PCA, and k neighbors)
-def train_model(folder_path: str, num_reduced_dimensions: int, num_neighors: int):
-    #mocking data for training
-    num_people = 3 #me, junyi, sammy
-    num_images_per_person = 5
-    num_images = num_people * num_images_per_person
-    
-    #creating mock data
-    mock_face_data = np.random.rand(num_images, image_size)
-
-    #creating mock lables
-    labels = ['Manny', 'Sammy', 'Junyi']
-    mock_labels = np.array([label for label in labels for _ in range(num_images_per_person)])
+def train_model(
+    face_data: np.ndarray,
+    labels: np.ndarray,
+    num_reduced_dimensions: int,
+    num_neighors: int):
 
     #centering data around the mean image (PCA STEP 1)
-    mean_image = np.mean(mock_face_data, axis=0)
-    centered_face_data = mock_face_data - mean_image
-
-    #printing mock data
-    # print_mock_data(mock_face_data, centered_face_data, mean_image, mock_labels)
+    mean_image = np.mean(face_data, axis=0)
+    centered_face_data = face_data - mean_image
 
     #implementation of PCA
     pca = PCA(num_reduced_dimensions)
@@ -63,14 +53,8 @@ def train_model(folder_path: str, num_reduced_dimensions: int, num_neighors: int
 
     knn = KNeighborsClassifier(num_neighors)
 
-    knn.fit(features, mock_labels)
+    knn.fit(features, labels)
 
     print("just trained knn classifier")
 
     save_models(mean_image, pca, knn)
-
-#returns name of recognized face
-def recognize_face(face_array: np.ndarray) -> str:
-    return ""
-
-train_model("test", 5, 4)
