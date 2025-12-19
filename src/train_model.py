@@ -1,88 +1,60 @@
-# src/train_model.py
-import os
 import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.svm import SVC
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import joblib
+import pickle
+import os
+from typing import Tuple, List, Union
+from sklearn.decomposition import PCA
+from sklearn.neighbors import KNeighborsClassifier
 
-from utils import list_subfolders, load_images_from_folder
+image_size = 100*100
 
-PROC_DATA_DIR = os.path.join("..", "data", "processed")
-MODELS_DIR = os.path.join("..", "models")
+def print_mock_data(mock_face_data, centered_face_data, mean_image, mock_labels):
+    print(mock_face_data)
+    print("---------------------")
+    print(centered_face_data)
+    print("---------------------")
+    print(mean_image)
+    print("---------------------")
+    print(mock_labels)
 
-N_COMPONENTS = 100  # PCA components
+#saves the models we created and trained in train_model()
+def save_models(mean_image: np.ndarray, pca: PCA, knn: KNeighborsClassifier):
+    os.makedirs("model_files", exist_ok=True)
 
-def load_dataset():
-    X = []
-    y = []
-    persons = list_subfolders(PROC_DATA_DIR)
-    if not persons:
-        raise RuntimeError("No processed data found. Run preprocess.py first.")
+    #saving mean_image to 'model_files/mean_image.pj1'
+    with open('model_files/mean_image.pk1', 'wb') as f:
+        pickle.dump(mean_image, f)
 
-    for person in persons:
-        folder = os.path.join(PROC_DATA_DIR, person)
-        imgs = load_images_from_folder(folder)
-        for img in imgs:
-            X.append(img.flatten())
-            y.append(person)
+    #saving pca to 'model_files/mean_image.pj1'
+    joblib.dump(pca, 'model_files/pca_model.pk1')
 
-    X = np.array(X, dtype=np.float32)
-    y = np.array(y)
-    return X, y
+    with open('model_files/knn_classifier.pk1', 'wb')as f:
+        pickle.dump(knn, f)
 
-def main():
-    os.makedirs(MODELS_DIR, exist_ok=True)
+    print("saved all models to model_files directory")
 
-    print("Loading dataset...")
-    X, y = load_dataset()
-    print(f"Loaded {X.shape[0]} images, each of dimension {X.shape[1]}")
+#trains the model using PCA and knn (input is number of dimensions for PCA, and k neighbors)
+def train_model(
+    face_data: np.ndarray,
+    labels: np.ndarray,
+    num_reduced_dimensions: int,
+    num_neighors: int):
 
-    # Encode labels
-    le = LabelEncoder()
-    y_encoded = le.fit_transform(y)
+    #centering data around the mean image (PCA STEP 1)
+    mean_image = np.mean(face_data, axis=0)
+    centered_face_data = face_data - mean_image
 
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_encoded, test_size=0.3, random_state=42, stratify=y_encoded
-    )
+    #implementation of PCA
+    pca = PCA(num_reduced_dimensions)
 
-    # PCA
-    print("Fitting PCA...")
-    pca = PCA(n_components=N_COMPONENTS, whiten=True, random_state=42)
-    pca.fit(X_train)
+    features = pca.fit_transform(centered_face_data)
 
-    X_train_pca = pca.transform(X_train)
-    X_test_pca = pca.transform(X_test)
+    #implementation of knn
 
-    # Classifier (SVM)
-    print("Training SVM classifier...")
-    clf = SVC(kernel="rbf", class_weight="balanced", probability=True, random_state=42)
-    clf.fit(X_train_pca, y_train)
+    knn = KNeighborsClassifier(num_neighors)
 
-    # Evaluation
-    y_pred = clf.predict(X_test_pca)
-    acc = accuracy_score(y_test, y_pred)
-    print(f"\nAccuracy: {acc:.3f}\n")
-    print("Classification report:")
-    print(classification_report(y_test, y_pred, target_names=le.classes_))
-    print("Confusion matrix:")
-    print(confusion_matrix(y_test, y_pred))
+    knn.fit(features, labels)
 
-    # Save models
-    pca_path = os.path.join(MODELS_DIR, "pca_model.pkl")
-    clf_path = os.path.join(MODELS_DIR, "classifier.pkl")
-    le_path  = os.path.join(MODELS_DIR, "label_encoder.pkl")
+    print("just trained knn classifier")
 
-    joblib.dump(pca, pca_path)
-    joblib.dump(clf, clf_path)
-    joblib.dump(le, le_path)
-
-    print(f"\nSaved PCA model to {pca_path}")
-    print(f"Saved classifier to {clf_path}")
-    print(f"Saved label encoder to {le_path}")
-
-if __name__ == "__main__":
-    main()
+    save_models(mean_image, pca, knn)
