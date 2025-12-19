@@ -15,3 +15,15 @@ A Python-based attendance system that uses Computer Vision to detect and recogni
 * A working webcam
 
 ### 2. Clone the Repository
+
+3. Install Dependencies
+Critical: This project requires specific versions of Numpy to maintain compatibility with OpenCV.
+
+pip install -r requirements.txt
+
+How to use:
+Go to terminal
+1. cd src
+2. python3 run_pipeline.py
+3. take a few photos by pressing spacebar and press q to close camera
+4. python recognize_attendance.py
