@@ -1,108 +1,83 @@
-# src/recognize_attendance.py
-import os
 import cv2
+import os
 import csv
-import datetime
-import numpy as np
-import joblib
-
+from datetime import datetime
 from utils import get_face_detector, preprocess_face_from_frame
+import recognition
 
-MODELS_DIR = os.path.join("..", "models")
-ATT_DIR    = os.path.join("..", "attendance")
-TARGET_SIZE = (100, 100)
+ATTENDANCE_FILE = "attendance.csv"
 
-def load_models():
-    pca_path = os.path.join(MODELS_DIR, "pca_model.pkl")
-    clf_path = os.path.join(MODELS_DIR, "classifier.pkl")
-    le_path  = os.path.join(MODELS_DIR, "label_encoder.pkl")
-
-    if not (os.path.exists(pca_path) and os.path.exists(clf_path) and os.path.exists(le_path)):
-        raise RuntimeError("Models not found. Run train_model.py first.")
-
-    pca = joblib.load(pca_path)
-    clf = joblib.load(clf_path)
-    le  = joblib.load(le_path)
-    return pca, clf, le
-
-def get_attendance_file():
-    os.makedirs(ATT_DIR, exist_ok=True)
-    today = datetime.date.today().isoformat()
-    fname = f"attendance_{today}.csv"
-    fpath = os.path.join(ATT_DIR, fname)
-    if not os.path.exists(fpath):
-        with open(fpath, "w", newline="") as f:
+def mark_attendance(name):
+    now = datetime.now()
+    date_string = now.strftime('%Y-%m-%d')
+    time_string = now.strftime('%H:%M:%S')
+    
+    file_exists = os.path.isfile(ATTENDANCE_FILE)
+    
+    name_list = []
+    if file_exists:
+        with open(ATTENDANCE_FILE, 'r') as f:
+            reader = csv.reader(f)
+            for line in reader:
+                if len(line) == 3:
+                    entry_name, entry_time, entry_date = line
+                    if entry_date == date_string:
+                        name_list.append(entry_name)
+    
+    if name not in name_list:
+        with open(ATTENDANCE_FILE, 'a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(["name", "date", "time", "confidence"])
-    return fpath
-
-def append_attendance(name: str, confidence: float, att_file: str):
-    now = datetime.datetime.now()
-    date_str = now.date().isoformat()
-    time_str = now.strftime("%H:%M:%S")
-    with open(att_file, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([name, date_str, time_str, f"{confidence:.3f}"])
+            if not file_exists:
+                writer.writerow(['Name', 'Time', 'Date'])
+            
+            writer.writerow([name, time_string, date_string])
+            print(f"Attendance marked for: {name}")
 
 def main():
-    pca, clf, le = load_models()
-    detector = get_face_detector()
-    att_file = get_attendance_file()
-
-    # Keep track of who has already been logged in this session
-    seen_names = set()
-
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Error: cannot access webcam.")
+    if not recognition.load_recognition_models(model_dir='model_files'):
+        print("Failed to load models.")
         return
 
-    print("Press 'q' to quit.")
+    detector = get_face_detector()
+    cap = cv2.VideoCapture(0)
+    
+    if not cap.isOpened():
+        print("Error: Could not access webcam.")
+        return
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Failed to grab frame.")
             break
 
-        result = preprocess_face_from_frame(frame, detector, TARGET_SIZE)
+        display_frame = frame.copy()
+
+        result = preprocess_face_from_frame(frame, detector, size=(100, 100))
+
         if result is not None:
             face_resized, (x, y, w, h) = result
 
-            # Flatten and project through PCA
-            face_vec = face_resized.flatten().astype(np.float32).reshape(1, -1)
-            face_pca = pca.transform(face_vec)
+            try:
+                predicted_name = recognition.recognize_face(face_resized)
 
-            # Predict
-            proba = clf.predict_proba(face_pca)[0]
-            pred_idx = np.argmax(proba)
-            confidence = proba[pred_idx]
-            name = le.inverse_transform([pred_idx])[0]
+                cv2.rectangle(display_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                
+                cv2.rectangle(display_frame, (x, y-35), (x+w, y), (0, 255, 0), cv2.FILLED)
+                cv2.putText(display_frame, predicted_name, (x+6, y-6), 
+                            cv2.FONT_HERSHEY_DUPLEX, 0.8, (255, 255, 255), 1)
 
-            # Threshold for accepting recognition
-            THRESH = 0.6  # tune as needed
-            if confidence >= THRESH:
-                label = f"{name} ({confidence:.2f})"
-                # Log attendance if seeing for first time this session
-                if name not in seen_names:
-                    append_attendance(name, confidence, att_file)
-                    seen_names.add(name)
-            else:
-                label = "Unknown"
+                mark_attendance(predicted_name)
 
-            # Draw bounding box and label
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 255, 255), 2)
-            cv2.putText(frame, label, (x, y-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            except Exception as e:
+                print(e)
 
-        cv2.imshow("Face Recognition Attendance", frame)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
+        cv2.imshow('Attendance System', display_frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
-    print("Session ended. Attendance saved.")
 
 if __name__ == "__main__":
     main()
